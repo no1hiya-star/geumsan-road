@@ -44,6 +44,11 @@
     #results .item { padding: 11px 14px; border-bottom: 1px solid #e2e8f0; font-size: 15px; cursor: pointer; }
     #results .item small { display: block; color: #64748b; font-size: 12px; margin-top: 2px; }
     #results .empty { padding: 14px; color: #64748b; font-size: 14px; }
+    #windy { position: fixed; inset: 0; z-index: 1300; background: #0f172a; display: none; flex-direction: column; }
+    #windy .top { display: flex; gap: 8px; align-items: center; padding: calc(env(safe-area-inset-top, 0px) + 8px) 10px 8px; color: #fff; font-size: 14px; }
+    #windy .top span { flex: 1; font-weight: 700; }
+    #windy select, #windy button { font-size: 15px; padding: 8px 12px; border-radius: 8px; border: 1px solid #cbd5e1; background: #fff; }
+    #windy iframe { flex: 1; border: 0; width: 100%; }
   </style>
 </head>
 <body>
@@ -64,12 +69,28 @@
     </div>
     <button id="startBtn">▶ 안내 시작</button>
     <button id="followBtn" class="on">내 위치 따라가기</button>
+    <button id="satBtn">🛰 위성</button>
+    <button id="windBtn">🌬 바람·기상</button>
     <select id="thSel">
       <option value="2">경고: 2m 이하</option>
       <option value="3" selected>경고: 3m 이하</option>
       <option value="4">경고: 4m 이하</option>
     </select>
     <input type="file" id="fileInput" accept=".geojson,.json" />
+  </div>
+
+  <div id="windy">
+    <div class="top">
+      <span>Windy 기상</span>
+      <select id="windOv">
+        <option value="wind">바람</option>
+        <option value="rain">비</option>
+        <option value="temp">기온</option>
+        <option value="clouds">구름</option>
+      </select>
+      <button id="windClose">닫기</button>
+    </div>
+    <iframe id="windFrame" title="Windy"></iframe>
   </div>
 
   <script>
@@ -446,6 +467,39 @@
       e.target.classList.toggle('on', followOn);
       if (followOn && lastPos && map) map.setCenter(new kakao.maps.LatLng(lastPos[0], lastPos[1]));
     };
+    // ===== Windy 기상 지도 (내 위치 또는 지도 중심 기준) =====
+    function windyUrl(lat, lng, ov) {
+      return 'https://embed.windy.com/embed2.html?lat=' + lat.toFixed(4) + '&lon=' + lng.toFixed(4) +
+        '&zoom=10&level=surface&overlay=' + ov + '&menu=&message=&marker=true&calendar=now&pressure=&type=map' +
+        '&location=coordinates&detail=&detailLat=' + lat.toFixed(4) + '&detailLon=' + lng.toFixed(4) +
+        '&metricWind=default&metricTemp=default&radarRange=-1';
+    }
+    function loadWindy() {
+      let lat = 36.107, lng = 127.488;
+      if (lastPos) { lat = lastPos[0]; lng = lastPos[1]; }
+      else if (map) { const c = map.getCenter(); lat = c.getLat(); lng = c.getLng(); }
+      document.getElementById('windFrame').src = windyUrl(lat, lng, document.getElementById('windOv').value);
+    }
+    document.getElementById('windBtn').onclick = () => {
+      loadWindy();
+      document.getElementById('windy').style.display = 'flex';
+    };
+    document.getElementById('windClose').onclick = () => {
+      document.getElementById('windy').style.display = 'none';
+      document.getElementById('windFrame').src = 'about:blank';   // 닫으면 데이터 사용 중지
+    };
+    document.getElementById('windOv').onchange = loadWindy;
+
+    // 일반 지도 <-> 위성 지도(지명 포함) 전환
+    let satOn = false;
+    document.getElementById('satBtn').onclick = e => {
+      if (!map) return;
+      satOn = !satOn;
+      map.setMapTypeId(satOn ? kakao.maps.MapTypeId.HYBRID : kakao.maps.MapTypeId.ROADMAP);
+      e.target.classList.toggle('on', satOn);
+      e.target.textContent = satOn ? '🗺 일반 지도' : '🛰 위성';
+    };
+
     document.getElementById('thSel').onchange = e => {
       threshold = Number(e.target.value); lastAlertKey = '';
       if (lastPos) checkAhead(lastPos[0], lastPos[1], 0, null);
