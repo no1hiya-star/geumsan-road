@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>금산군 출동로 폭 안내</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    html, body, #map { margin: 0; padding: 0; width: 100%; height: 100%; }
+    #banner {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 1100;
+      padding: calc(env(safe-area-inset-top, 0px) + 10px) 14px 10px;
+      font: 700 18px/1.3 sans-serif; text-align: center; color: #fff;
+      background: #475569; transition: background .2s;
+    }
+    #banner small { display: block; font-weight: 400; font-size: 13px; opacity: .9; }
+    #banner.ok { background: #16a34a; }
+    #banner.warn { background: #ea580c; }
+    #banner.danger { background: #dc2626; }
+    #bar {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 1100;
+      display: flex; gap: 8px; padding: 8px 8px calc(env(safe-area-inset-bottom, 0px) + 8px);
+      background: rgba(255,255,255,.95); box-shadow: 0 -1px 6px rgba(0,0,0,.25);
+      flex-wrap: wrap; align-items: center; font-size: 13px;
+    }
+    #bar button, #bar select {
+      font-size: 15px; padding: 10px 12px; border: 1px solid #cbd5e1;
+      border-radius: 8px; background: #fff;
+    }
+    #bar button.on { background: #2563eb; color: #fff; border-color: #2563eb; }
+    #bar input[type=file] { max-width: 150px; font-size: 12px; }
+    .legend {
+      background: #fff; padding: 8px 10px; line-height: 1.6; border-radius: 6px;
+      box-shadow: 0 1px 6px rgba(0,0,0,.25); font-size: 12px; margin-bottom: 70px !important;
+    }
+    .legend i { display: inline-block; width: 18px; height: 4px; margin-right: 6px; vertical-align: middle; }
+    .leaflet-top { top: 70px; }
+  </style>
+</head>
+<body>
+  <div id="banner">시작 버튼을 눌러 주세요<small>위치 확인 전</small></div>
+  <div id="map"></div>
+  <div id="bar">
+    <button id="startBtn">▶ 안내 시작</button>
+    <button id="followBtn" class="on">내 위치 따라가기</button>
+    <select id="thSel">
+      <option value="2">경고: 2m 이하</option>
+      <option value="3" selected>경고: 3m 이하</option>
+      <option value="4">경고: 4m 이하</option>
+    </select>
+    <input type="file" id="fileInput" accept=".geojson,.json" />
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    // ===== 설정 =====
+    const AHEAD_DIST = 120;   // 전방 감시 거리 (m)
+    const ON_ROAD_DIST = 20;  // 이 거리 안이면 "현재 그 도로 위"로 판단 (m)
+    const CONE_DEG = 30;      // 진행방향 좌우 각도 (도)
+    const STEP_M = 10;        // 선을 쪼개는 간격 (m)
+    const CELL = 0.0006;      // 격자 크기 (도, 약 60m)
+
+    const map = L.map('map', { preferCanvas: true, zoomControl: false }).setView([36.107, 127.488], 14);
+    L.control.zoom({ position: 'topright' }).addTo(map);
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+      maxZoom: 19, attribution: 'Tiles © Esri'
+    }).addTo(map);
+
+    let roadLayer = null, grid = new Map(), allFeatures = [];
+    let threshold = 3;
+
+    function readBT(p) {
+      const raw = p ? p.ROAD_BT : null;
+      if (raw === null || raw === undefined || String(raw).trim() === '') return NaN;
+      return Number(raw);
+    }
+
+    function getRoadStyle(f) {
+      const bt = readBT(f.properties);
+      if (isNaN(bt)) return { color: '#7c3aed', weight: 3, opacity: .85, dashArray: '6 5' };
+      if (bt <= 2) return { color: '#e11d48', weight: 5, opacity: .95 };
+      if (bt <= 3) return { color: '#eab308', weight: 4, opacity: .95 };
+      if (bt <= 4) return { color: '#16a34a', weight: 3.5, opacity: .9 };
+      return { color: '#94a3b8', weight: 2, opacity: .45 };
+    }
+
+    // ===== 거리/방향 계산 =====
+    const R = 6371000, toRad = x => x * Math.PI / 180;
+    function dist(lat1, lng1, lat2, lng2) {
+      const dLat = toRad(lat2 - lat1), dLng = toRad(lng2 - lng1);
+      const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng/2)**2;
+      return 2 * R * Math.asin(Math.sqrt(a));
+    }
+    function bearing(lat1, lng1, lat2, lng2) {
+      const y = Math.sin(toRad(lng2 - lng1)) * Math.cos(toRad(lat2));
+      const x = Math.cos(toRad(lat1)) * Math.sin(toRad(lat2)) - Math.sin(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.cos(toRad(lng2 - lng1));
+      return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+    }
+    function angDiff(a, b) { const d = Math.abs(a - b) % 360; return d > 180 ? 360 - d : d; }
+
+    // ===== 검색용 격자 만들기 (폭 4m 이하 도로만, 10m 간격 점) =====
+    function buildGrid(features) {
+      grid = new Map();
+      let n = 0;
+      features.forEach(f => {
+        const p = f.properties || {};
+        const bt = readBT(p);
+        if (isNaN(bt) || bt > 4) return;
+        f.geometry.coordinates.forEach(line => {
+          for (let i = 0; i < line.length - 1; i++) {
+            const [x1, y1] = line[i], [x2, y2] = line[i + 1];
+            const len = dist(y1, x1, y2, x2);
+            const steps = Math.max(1, Math.ceil(len / STEP_M));
+            for (let s = 0; s <= steps; s++) {
+              const t = s / steps;
+              addPt(y1 + (y2 - y1) * t, x1 + (x2 - x1) * t, bt, p.RN || '이름 없음');
+              n++;
+            }
+          }
+        });
+      });
+      console.log('격자 점 개수:', n);
+    }
+    function addPt(lat, lng, bt, rn) {
+      const key = Math.floor(lat / CELL) + '_' + Math.floor(lng / CELL);
+      if (!grid.has(key)) grid.set(key, []);
+      grid.get(key).push({ lat, lng, bt, rn });
+    }
+    function nearbyPts(lat, lng, radiusM) {
+      const r = Math.ceil((radiusM / 111000) / CELL) + 1;
+      const cy = Math.floor(lat / CELL), cx = Math.floor(lng / CELL);
+      const out = [];
+      for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+        const arr = grid.get((cy + dy) + '_' + (cx + dx));
+        if (arr) for (const p of arr) out.push(p);
+      }
+      return out;
+    }
+
+    // ===== 지도에 그리기 =====
+    function renderGeoJson(data) {
+      allFeatures = data.features || [];
+      if (roadLayer) map.removeLayer(roadLayer);
+      roadLayer = L.geoJSON(data, {
+        style: getRoadStyle,
+        onEachFeature: (f, lyr) => {
+          const p = f.properties || {}, bt = readBT(p);
+          lyr.bindPopup(`<b>${p.RN || '도로명 없음'}</b><br>도로폭: <b>${isNaN(bt) ? '정보 없음' : bt + ' m'}</b><br>기준지점: ${p.RBP_CN || '-'}`);
+        }
+      }).addTo(map);
+      if (!lastPos && roadLayer.getBounds().isValid()) map.fitBounds(roadLayer.getBounds());
+      buildGrid(allFeatures);
+      setBanner('', '도로 데이터 불러옴', `도로 ${allFeatures.length.toLocaleString()}개`);
+    }
+
+    document.getElementById('fileInput').addEventListener('change', e => {
+      const file = e.target.files?.[0]; if (!file) return;
+      const rd = new FileReader();
+      rd.onload = () => { try { renderGeoJson(JSON.parse(rd.result)); } catch (err) { alert('JSON 오류: ' + err); } };
+      rd.readAsText(file, 'utf-8');
+    });
+    if (location.protocol.startsWith('http')) {
+      fetch('./geumsan.geojson').then(r => r.ok ? r.json() : null).then(d => { if (d) renderGeoJson(d); }).catch(() => {});
+    }
+
+    // ===== 범례 =====
+    const legend = L.control({ position: 'bottomright' });
+    legend.onAdd = () => {
+      const d = L.DomUtil.create('div', 'legend');
+      d.innerHTML = '<b>도로 폭</b><br>' +
+        '<i style="background:#e11d48"></i>2m 이하<br>' +
+        '<i style="background:#eab308"></i>2~3m<br>' +
+        '<i style="background:#16a34a"></i>3~4m<br>' +
+        '<i style="background:#94a3b8"></i>4m 초과';
+      return d;
+    };
+    legend.addTo(map);
+
+    // ===== 배너/알림 =====
+    const banner = document.getElementById('banner');
+    function setBanner(cls, title, sub) {
+      banner.className = cls;
+      banner.innerHTML = title + (sub ? `<small>${sub}</small>` : '');
+    }
+    let audioCtx = null, lastAlertKey = '', lastAlertTime = 0;
+    function beep(freq, ms) {
+      try {
+        if (!audioCtx) return;
+        const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+        o.frequency.value = freq; g.gain.value = 0.15;
+        o.connect(g); g.connect(audioCtx.destination);
+        o.start(); o.stop(audioCtx.currentTime + ms / 1000);
+      } catch (e) {}
+    }
+    function alertUser(key, level) {
+      const now = Date.now();
+      if (key === lastAlertKey && now - lastAlertTime < 15000) return; // 같은 경고는 15초 간격
+      lastAlertKey = key; lastAlertTime = now;
+      if (navigator.vibrate) navigator.vibrate(level === 'danger' ? [300, 100, 300] : [200]);
+      beep(level === 'danger' ? 1000 : 700, level === 'danger' ? 400 : 250);
+    }
+
+    // ===== 위치 추적 =====
+    let followOn = true, watchId = null, gpsMarker, gpsCircle, lastPos = null, prevPos = null, curHeading = null;
+
+    function onPosition(pos) {
+      const { latitude: lat, longitude: lng, accuracy, speed } = pos.coords;
+      let heading = pos.coords.heading;
+      // heading이 없으면 이전 위치와 비교해서 직접 계산
+      if ((heading === null || isNaN(heading)) && prevPos && dist(prevPos[0], prevPos[1], lat, lng) > 5) {
+        heading = bearing(prevPos[0], prevPos[1], lat, lng);
+      }
+      if (prevPos === null || dist(prevPos[0], prevPos[1], lat, lng) > 5) prevPos = [lat, lng];
+      if (heading !== null && heading !== undefined && !isNaN(heading)) curHeading = heading;
+      lastPos = [lat, lng];
+
+      if (!gpsMarker) {
+        gpsMarker = L.circleMarker([lat, lng], { radius: 8, color: '#fff', weight: 3, fillColor: '#2563eb', fillOpacity: 1 }).addTo(map);
+        gpsCircle = L.circle([lat, lng], { radius: accuracy, color: '#2563eb', weight: 1, fillOpacity: .1 }).addTo(map);
+        map.setView([lat, lng], 17);
+      } else {
+        gpsMarker.setLatLng([lat, lng]);
+        gpsCircle.setLatLng([lat, lng]).setRadius(accuracy);
+      }
+      if (followOn) map.panTo([lat, lng], { animate: true });
+
+      checkAhead(lat, lng, accuracy, speed);
+    }
+
+    function checkAhead(lat, lng, accuracy, speed) {
+      if (grid.size === 0) { setBanner('', '도로 데이터 없음', 'GeoJSON을 불러오세요'); return; }
+      const moving = speed !== null && speed !== undefined && speed > 1.5 && curHeading !== null;
+      const pts = nearbyPts(lat, lng, AHEAD_DIST);
+
+      // 1) 현재 내가 있는 도로 (가장 가까운 점)
+      let nearest = null, nd = Infinity;
+      pts.forEach(p => { const d = dist(lat, lng, p.lat, p.lng); if (d < nd) { nd = d; nearest = p; } });
+
+      // 2) 전방의 좁은 도로 (진행 중이면 앞쪽만, 정지 중이면 전체)
+      let ahead = null, ad = Infinity;
+      pts.forEach(p => {
+        if (p.bt > threshold) return;
+        const d = dist(lat, lng, p.lat, p.lng);
+        if (d > AHEAD_DIST || d >= ad) return;
+        if (moving && d > 15 && angDiff(bearing(lat, lng, p.lat, p.lng), curHeading) > CONE_DEG) return;
+        ahead = p; ad = d;
+      });
+
+      const accNote = accuracy > 30 ? ` · GPS 오차 ${Math.round(accuracy)}m` : '';
+      const onNarrow = nearest && nd <= ON_ROAD_DIST && nearest.bt <= threshold;
+
+      if (onNarrow) {
+        setBanner('danger', `⚠ 좁은 도로 구간 (${nearest.bt}m)`, `${nearest.rn} · 서행 · 주의${accNote}`);
+        alertUser('on_' + nearest.rn, 'danger');
+      } else if (ahead) {
+        setBanner('warn', `전방 ${Math.round(ad)}m · 폭 ${ahead.bt}m 이하 도로`, `${ahead.rn}${accNote}`);
+        alertUser('ahead_' + ahead.rn, 'warn');
+      } else if (nearest && nd <= ON_ROAD_DIST) {
+        setBanner('ok', `현재 ${nearest.rn} (${nearest.bt}m)`, `전방 ${AHEAD_DIST}m 내 좁은 도로 없음${accNote}`);
+      } else {
+        setBanner('ok', `전방 ${AHEAD_DIST}m 내 ${threshold}m 이하 도로 없음`, accNote.replace(' · ', ''));
+      }
+    }
+
+    // 정밀 GPS가 안 잡히면(실내 등) 자동으로 일반 위치(와이파이/기지국)로 다시 시도
+    function startWatch(high) {
+      if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+      watchId = navigator.geolocation.watchPosition(onPosition, err => {
+        if (err.code === 1) {
+          setBanner('danger', '위치 권한이 꺼져 있어요', '브라우저 주소창 옆 설정과 폰의 위치 설정에서 허용해 주세요');
+          return;
+        }
+        if (high) {
+          setBanner('', '정밀 GPS 대기 중...', '실내에서는 정확도가 낮아요. 일반 위치로 시도합니다');
+          startWatch(false);
+          return;
+        }
+        setBanner('danger', '위치를 못 가져왔어요', (err.code === 2 ? '이 기기에서 위치를 알 수 없음' : '시간 초과') + ' (' + err.message + ')');
+      }, { enableHighAccuracy: high, maximumAge: 1000, timeout: high ? 10000 : 20000 });
+    }
+
+    // 안내 중에는 화면이 꺼지지 않게 유지
+    let wakeLock = null;
+    async function requestWakeLock() {
+      try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch (e) {}
+    }
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && watchId !== null) requestWakeLock();
+    });
+
+    function startTracking() {
+      if (!navigator.geolocation) { alert('이 기기는 위치 기능을 지원하지 않아요.'); return; }
+      if (watchId !== null) return;
+      // 소리 재생은 사용자가 버튼을 누른 뒤에만 허용됨
+      try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
+      setBanner('', '위치 확인 중...', '');
+      if (location.protocol === 'file:') {
+        setBanner('danger', '위치 사용 불가', '파일로 직접 열면 안 돼요. localhost 또는 https 주소로 여세요');
+        return;
+      }
+      startWatch(true);
+      requestWakeLock();
+      const b = document.getElementById('startBtn');
+      b.textContent = '● 안내 중'; b.classList.add('on');
+    }
+
+    document.getElementById('startBtn').onclick = startTracking;
+    document.getElementById('followBtn').onclick = e => {
+      followOn = !followOn;
+      e.target.classList.toggle('on', followOn);
+      if (followOn && lastPos) map.setView(lastPos, Math.max(map.getZoom(), 17));
+    };
+    map.on('dragstart', () => { followOn = false; document.getElementById('followBtn').classList.remove('on'); });
+    document.getElementById('thSel').onchange = e => {
+      threshold = Number(e.target.value); lastAlertKey = '';
+      if (lastPos) checkAhead(lastPos[0], lastPos[1], 0, null);
+    };
+  </script>
+</body>
+</html>
