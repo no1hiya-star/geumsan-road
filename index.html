@@ -2,8 +2,14 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
-  <title>금산군 출동로 폭 안내 (카카오맵)</title>
+  <title>차량길잡이</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="theme-color" content="#0f172a" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="차량길잡이" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
   <style>
     html, body, #map { margin: 0; padding: 0; width: 100%; height: 100%; }
     #banner {
@@ -56,9 +62,9 @@
   <div id="map"></div>
   <div id="legend">
     <b>도로 폭</b><br>
-    <i style="background:#e11d48"></i>2m 이하<br>
-    <i style="background:#eab308"></i>2~3m<br>
-    <i style="background:#16a34a"></i>3~4m<br>
+    <i style="background:#e11d48"></i><span id="lgRed"></span><br>
+    <i style="background:#eab308"></i><span id="lgYel"></span><br>
+    <i style="background:#16a34a"></i><span id="lgGrn"></span><br>
     <span id="hint">4m 초과는 안 그림<br>(지도를 더 확대하면 표시)</span>
   </div>
   <div id="bar">
@@ -71,10 +77,16 @@
     <button id="followBtn" class="on">내 위치 따라가기</button>
     <button id="satBtn">🛰 위성</button>
     <button id="windBtn">🌬 바람·기상</button>
-    <select id="thSel">
-      <option value="2">경고: 2m 이하</option>
-      <option value="3" selected>경고: 3m 이하</option>
-      <option value="4">경고: 4m 이하</option>
+    <select id="vehSel">
+      <option value="0">카프차 (폭 1.73m)</option>
+      <option value="1">소형펌프 (폭 2.10m)</option>
+      <option value="2">중형 펌프·화학 (폭 2.44m)</option>
+      <option value="3" selected>대형급 (폭 2.495m)</option>
+    </select>
+    <select id="marSel">
+      <option value="0.5">여유 0.5m</option>
+      <option value="1" selected>여유 1.0m</option>
+      <option value="1.5">여유 1.5m</option>
     </select>
     <input type="file" id="fileInput" accept=".geojson,.json" />
   </div>
@@ -104,7 +116,16 @@
     const DRAW_MAX_LEVEL = 6; // 카카오맵 레벨이 이 값 이하일 때만 도로선을 그림 (숫자가 작을수록 확대)
 
     let map = null;
-    let threshold = 3;
+    // 소방차 제원 (단위 m). 같은 묶음은 가장 큰 값 기준. height는 높이 데이터가 생기면 사용
+    const VEHICLES = [
+      { short: '카프차',   width: 1.73,  length: 4.905, height: 2.42 },
+      { short: '소형펌프', width: 2.1,   length: 6.675, height: 2.65 },
+      { short: '중형',     width: 2.44,  length: 7.795, height: 3.1 },
+      { short: '대형급',   width: 2.495, length: 8.44,  height: 3.55 }
+    ];
+    let vehicle = VEHICLES[3];
+    let margin = 1.0;   // 차 폭에 더해서 필요한 여유 폭 (양쪽 합계, m)
+    const fmt = x => String(parseFloat(x.toFixed(3)));
     let followOn = true, watchId = null, lastPos = null, prevPos = null, curHeading = null;
     let gpsOverlay = null, gpsCircle = null, infoWin = null;
     let items = [];            // 지도에 그릴 도로선 (보이는 범위만 실제로 그림)
@@ -153,8 +174,8 @@
     // ===== 도로 데이터 =====
     function styleOf(bt) {
       if (isNaN(bt)) return { color: '#7c3aed', weight: 3, style: 'shortdash' };
-      if (bt <= 2) return { color: '#e11d48', weight: 5, style: 'solid' };
-      if (bt <= 3) return { color: '#eab308', weight: 4, style: 'solid' };
+      if (bt < vehicle.width) return { color: '#e11d48', weight: 5, style: 'solid' };
+      if (bt < vehicle.width + margin) return { color: '#eab308', weight: 4, style: 'solid' };
       return { color: '#16a34a', weight: 4, style: 'solid' };
     }
 
@@ -321,9 +342,16 @@
       checkAhead(lat, lng, accuracy, speed);
     }
 
+    function judge(bt) {
+      if (bt < vehicle.width) return { lv: 'danger', label: '통과 곤란' };
+      if (bt < vehicle.width + margin) return { lv: 'warn', label: '폭 빠듯함' };
+      return { lv: 'ok', label: '여유' };
+    }
+
     function checkAhead(lat, lng, accuracy, speed) {
       if (grid.size === 0) { setBanner('', '도로 데이터 없음', 'GeoJSON을 불러오세요'); return; }
       const moving = speed !== null && speed !== undefined && speed > 1.5 && curHeading !== null;
+      const need = vehicle.width + margin;
       const pts = nearbyPts(lat, lng, AHEAD_DIST);
 
       let nearest = null, nd = Infinity;
@@ -331,7 +359,7 @@
 
       let ahead = null, ad = Infinity;
       pts.forEach(p => {
-        if (p.bt > threshold) return;
+        if (p.bt >= need) return;
         const d = dist(lat, lng, p.lat, p.lng);
         if (d > AHEAD_DIST || d >= ad) return;
         if (moving && d > 15 && angDiff(bearing(lat, lng, p.lat, p.lng), curHeading) > CONE_DEG) return;
@@ -339,18 +367,20 @@
       });
 
       const accNote = accuracy > 30 ? ` · GPS 오차 ${Math.round(accuracy)}m` : '';
-      const onNarrow = nearest && nd <= ON_ROAD_DIST && nearest.bt <= threshold;
+      const vInfo = `${vehicle.short} 폭 ${fmt(vehicle.width)}m`;
 
-      if (onNarrow) {
-        setBanner('danger', `⚠ 좁은 도로 구간 (${nearest.bt}m)`, `${nearest.rn} · 서행 · 주의${accNote}`);
-        alertUser('on_' + nearest.rn, 'danger');
+      if (nearest && nd <= ON_ROAD_DIST && nearest.bt < need) {
+        const j = judge(nearest.bt);
+        setBanner(j.lv, `⚠ ${j.label} · 도로폭 ${nearest.bt}m`, `${nearest.rn} · ${vInfo}${accNote}`);
+        alertUser('on_' + nearest.rn + j.lv, j.lv === 'danger' ? 'danger' : 'warn');
       } else if (ahead) {
-        setBanner('warn', `전방 ${Math.round(ad)}m · 폭 ${ahead.bt}m 이하 도로`, `${ahead.rn}${accNote}`);
-        alertUser('ahead_' + ahead.rn, 'warn');
+        const j = judge(ahead.bt);
+        setBanner(j.lv === 'danger' ? 'danger' : 'warn', `전방 ${Math.round(ad)}m · ${j.label} (도로폭 ${ahead.bt}m)`, `${ahead.rn} · ${vInfo}${accNote}`);
+        alertUser('ahead_' + ahead.rn + j.lv, j.lv === 'danger' ? 'danger' : 'warn');
       } else if (nearest && nd <= ON_ROAD_DIST) {
-        setBanner('ok', `현재 ${nearest.rn} (${nearest.bt}m)`, `전방 ${AHEAD_DIST}m 내 좁은 도로 없음${accNote}`);
+        setBanner('ok', `현재 ${nearest.rn} (${nearest.bt}m)`, `전방 ${AHEAD_DIST}m 내 통과 곤란·빠듯한 도로 없음${accNote}`);
       } else {
-        setBanner('ok', `전방 ${AHEAD_DIST}m 내 ${threshold}m 이하 도로 없음`, accNote.replace(' · ', ''));
+        setBanner('ok', `전방 ${AHEAD_DIST}m 내 ${vehicle.short} 통과 곤란·빠듯한 도로 없음`, accNote.replace(' · ', ''));
       }
     }
 
@@ -500,10 +530,25 @@
       e.target.textContent = satOn ? '🗺 일반 지도' : '🛰 위성';
     };
 
-    document.getElementById('thSel').onchange = e => {
-      threshold = Number(e.target.value); lastAlertKey = '';
+    function applyVehicle() {
+      vehicle = VEHICLES[Number(document.getElementById('vehSel').value)];
+      margin = Number(document.getElementById('marSel').value);
+      const w = vehicle.width;
+      document.getElementById('lgRed').textContent = `통과 곤란 (${fmt(w)}m 미만)`;
+      document.getElementById('lgYel').textContent = `빠듯함 (${fmt(w)}~${fmt(w + margin)}m)`;
+      document.getElementById('lgGrn').textContent = `여유 (${fmt(w + margin)}m 이상)`;
+      items.forEach(it => {
+        if (!it.pl) return;
+        const st = styleOf(it.bt);
+        it.pl.setOptions({ strokeColor: st.color, strokeWeight: st.weight, strokeStyle: st.style });
+      });
+      lastAlertKey = '';
       if (lastPos) checkAhead(lastPos[0], lastPos[1], 0, null);
-    };
+    }
+    document.getElementById('vehSel').onchange = applyVehicle;
+    document.getElementById('marSel').onchange = applyVehicle;
+    applyVehicle();
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
   </script>
 </body>
 </html>
