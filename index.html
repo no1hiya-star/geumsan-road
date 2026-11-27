@@ -22,6 +22,52 @@
     #banner.warn    { background: rgba(202, 138, 4, 0.96); }
     #banner.caution { background: rgba(22, 163, 74, 0.96); }
 
+    #topRightTools {
+      position: fixed; top: 82px; right: 12px; z-index: 28;
+      display: flex; flex-direction: column; gap: 6px;
+    }
+    .toolBtn {
+      padding: 9px 11px; border: none; border-radius: 8px;
+      background: rgba(255, 255, 255, 0.95); color: #0f172a;
+      font-size: 12px; font-weight: 700;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+      cursor: pointer;
+    }
+    .toolBtn.on { background: #2563eb; color: #fff; }
+
+    #windyPanel {
+      display: none;
+      position: fixed; top: 82px; left: 12px; right: 92px; height: 54%; max-height: 460px;
+      z-index: 35; background: #0f172a; border-radius: 12px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.35); overflow: hidden;
+      border: 1px solid rgba(255,255,255,0.18);
+    }
+    #windyPanel.open { display: flex; flex-direction: column; }
+    #windyHeader {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 8px 12px; background: #1e293b; color: #fff; font-size: 13px; font-weight: 700;
+    }
+    #windyControls { display: flex; gap: 6px; align-items: center; }
+    .wChip {
+      padding: 4px 8px; border: none; border-radius: 6px;
+      background: #334155; color: #e2e8f0; font-size: 11px; font-weight: 700; cursor: pointer;
+    }
+    .wChip.on { background: #0284c7; color: #fff; }
+    #windyClose {
+      padding: 4px 8px; border: none; border-radius: 6px;
+      background: #e11d48; color: #fff; font-size: 11px; font-weight: 700; cursor: pointer;
+    }
+    #windyFrame { flex: 1; width: 100%; height: 100%; border: none; background: #0f172a; }
+
+    #legend {
+      position: fixed; bottom: 76px; left: 12px; z-index: 25;
+      background: rgba(255, 255, 255, 0.92); color: #1e293b;
+      padding: 8px 10px; border-radius: 8px; font-size: 12px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+      line-height: 1.5;
+    }
+    .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
+
     #controls {
       position: fixed; bottom: 20px; left: 12px; right: 12px; z-index: 30;
       display: flex; gap: 8px; flex-wrap: wrap;
@@ -35,20 +81,30 @@
       cursor: pointer;
     }
     .btn.on { background: #2563eb; color: #fff; }
-
-    #legend {
-      position: fixed; bottom: 76px; left: 12px; z-index: 25;
-      background: rgba(255, 255, 255, 0.92); color: #1e293b;
-      padding: 8px 10px; border-radius: 8px; font-size: 12px;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.15);
-      line-height: 1.5;
-    }
-    .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
   </style>
 </head>
 <body>
   <div id="banner">지도 초기화 중...</div>
   <div id="map"></div>
+
+  <div id="topRightTools">
+    <button id="mapTypeBtn" class="toolBtn" onclick="toggleMapType()">위성지도</button>
+    <button id="windyBtn" class="toolBtn" onclick="toggleWindyPanel()">윈디 패널</button>
+  </div>
+
+  <div id="windyPanel">
+    <div id="windyHeader">
+      <span>Windy 기상 레이더</span>
+      <div id="windyControls">
+        <button id="wLayerWind" class="wChip on" onclick="setWindyLayer('wind')">바람</button>
+        <button id="wLayerRain" class="wChip" onclick="setWindyLayer('rain')">강수</button>
+        <button id="wLayerRadar" class="wChip" onclick="setWindyLayer('radar')">레이더</button>
+        <button id="wSyncBtn" class="wChip on" onclick="syncWindyToMap()">현재위치 동기화</button>
+        <button id="windyClose" onclick="toggleWindyPanel()">닫기</button>
+      </div>
+    </div>
+    <iframe id="windyFrame" allow="geolocation" loading="lazy"></iframe>
+  </div>
 
   <div id="legend">
     <div><span class="dot" style="background:#e11d48;"></span>위험 (2m 이하)</div>

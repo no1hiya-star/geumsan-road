@@ -14,6 +14,10 @@ const CELL = 0.0006;      // 격자 크기 (도, 약 60m)
 const DRAW_MAX_LEVEL = 6; // 카카오맵 레벨이 이 값 이하일 때만 도로선 표시
 
 let map = null;
+let satelliteOn = false;
+let windyOpen = false;
+let windyLayer = 'wind';
+
 const VEHICLES = [
   { short: '카프차',   width: 1.73,  length: 4.905, height: 2.42 },
   { short: '소형펌프', width: 2.1,   length: 6.675, height: 2.65 },
@@ -77,7 +81,10 @@ function initMap() {
   map.addControl(new kakao.maps.ZoomControl(), kakao.maps.ControlPosition.RIGHT);
   infoWin = new kakao.maps.InfoWindow({ removable: true, zIndex: 20 });
 
-  kakao.maps.event.addListener(map, 'idle', updateVisible);
+  kakao.maps.event.addListener(map, 'idle', () => {
+    updateVisible();
+    if (windyOpen && !lastPos) syncWindyToMap();
+  });
   kakao.maps.event.addListener(map, 'dragstart', () => {
     followOn = false;
     document.getElementById('followBtn').classList.remove('on');
@@ -92,6 +99,61 @@ function initMap() {
   }
 }
 
+// ===== 위성지도 전환 =====
+function toggleMapType() {
+  if (!map) return;
+  satelliteOn = !satelliteOn;
+  const btn = document.getElementById('mapTypeBtn');
+  if (satelliteOn) {
+    map.setMapTypeId(kakao.maps.MapTypeId.HYBRID);
+    btn.classList.add('on');
+    btn.textContent = '일반지도';
+  } else {
+    map.setMapTypeId(kakao.maps.MapTypeId.ROADMAP);
+    btn.classList.remove('on');
+    btn.textContent = '위성지도';
+  }
+}
+
+// ===== 윈디 패널 =====
+function toggleWindyPanel() {
+  windyOpen = !windyOpen;
+  const panel = document.getElementById('windyPanel');
+  const btn = document.getElementById('windyBtn');
+  panel.classList.toggle('open', windyOpen);
+  btn.classList.toggle('on', windyOpen);
+  if (windyOpen) {
+    syncWindyToMap();
+  }
+}
+
+function setWindyLayer(layer) {
+  windyLayer = layer;
+  ['wind', 'rain', 'radar'].forEach(k => {
+    const el = document.getElementById('wLayer' + k.charAt(0).toUpperCase() + k.slice(1));
+    if (el) el.classList.toggle('on', k === layer);
+  });
+  if (windyOpen) syncWindyToMap();
+}
+
+function syncWindyToMap() {
+  const frame = document.getElementById('windyFrame');
+  if (!frame) return;
+  let lat = 36.107, lng = 127.488;
+  if (lastPos) {
+    lat = lastPos.lat;
+    lng = lastPos.lng;
+  } else if (map) {
+    const c = map.getCenter();
+    lat = c.getLat();
+    lng = c.getLng();
+  }
+  const zoom = 11;
+  const url = `https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=%C2%B0C&metricWind=m/s&zoom=${zoom}&overlay=${encodeURIComponent(windyLayer)}&product=ecmwf&level=surface&lat=${lat.toFixed(4)}&lon=${lng.toFixed(4)}&detailLat=${lat.toFixed(4)}&detailLon=${lng.toFixed(4)}&marker=true`;
+  frame.src = url;
+}
+
+// ===== 다중 GeoJSON 로딩 =====
 async function loadGeoJsonFiles(files) {
   try {
     const mergedFeatures = [];
@@ -270,7 +332,7 @@ function onPosition(pos) {
   const lat = pos.coords.latitude;
   const lng = pos.coords.longitude;
   const acc = pos.coords.accuracy || 0;
-  const spd = pos.coords.speed; // m/s
+  const spd = pos.coords.speed;
   const hdg = pos.coords.heading;
 
   if (hdg !== null && !isNaN(hdg) && (spd === null || spd > 0.8)) {
