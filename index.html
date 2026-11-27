@@ -1,97 +1,67 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8" />
-  <title>차량길잡이</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <link rel="manifest" href="manifest.webmanifest" />
-  <meta name="theme-color" content="#0f172a" />
-  <meta name="mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-title" content="차량길잡이" />
-  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>충남 좁은길 출동 안내</title>
   <style>
-    html, body, #map { margin: 0; padding: 0; width: 100%; height: 100%; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 100%; height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Malgun Gothic", sans-serif; overflow: hidden; }
+    #map { width: 100%; height: 100%; }
+
     #banner {
-      position: fixed; top: 0; left: 0; right: 0; z-index: 1100;
-      padding: calc(env(safe-area-inset-top, 0px) + 10px) 14px 10px;
-      font: 700 18px/1.3 sans-serif; text-align: center; color: #fff;
-      background: #475569; transition: background .2s;
+      position: fixed; top: 12px; left: 12px; right: 12px; z-index: 30;
+      background: rgba(15, 23, 42, 0.92); color: #fff;
+      padding: 12px 16px; border-radius: 12px;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+      font-size: 16px; font-weight: 700; line-height: 1.35;
+      transition: background 0.2s;
     }
-    #banner small { display: block; font-weight: 400; font-size: 13px; opacity: .9; }
-    #banner.ok { background: #334155; }
-    #banner.warn { background: #ca8a04; }
-    #banner.caution { background: #16a34a; }
-    #banner.danger { background: #dc2626; }
-    #bar {
-      position: fixed; left: 0; right: 0; bottom: 0; z-index: 1100;
-      display: flex; gap: 8px; padding: 8px 8px calc(env(safe-area-inset-bottom, 0px) + 8px);
-      background: rgba(255,255,255,.95); box-shadow: 0 -1px 6px rgba(0,0,0,.25);
-      flex-wrap: wrap; align-items: center; font-size: 13px;
+    #banner small { display: block; font-size: 13px; font-weight: 400; color: #e2e8f0; margin-top: 3px; }
+    #banner.danger  { background: rgba(225, 29, 72, 0.96); }
+    #banner.warn    { background: rgba(202, 138, 4, 0.96); }
+    #banner.caution { background: rgba(22, 163, 74, 0.96); }
+
+    #controls {
+      position: fixed; bottom: 20px; left: 12px; right: 12px; z-index: 30;
+      display: flex; gap: 8px; flex-wrap: wrap;
     }
-    #bar button, #bar select {
-      font-size: 15px; padding: 10px 12px; border: 1px solid #cbd5e1;
-      border-radius: 8px; background: #fff;
+    .btn {
+      flex: 1; min-width: 90px; padding: 12px 10px;
+      border: none; border-radius: 10px;
+      background: rgba(255, 255, 255, 0.95); color: #0f172a;
+      font-size: 14px; font-weight: 700;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+      cursor: pointer;
     }
-    #bar button.on { background: #2563eb; color: #fff; border-color: #2563eb; }
+    .btn.on { background: #2563eb; color: #fff; }
+
     #legend {
-      position: fixed; right: 8px; bottom: 150px; z-index: 1050;
-      background: #fff; padding: 8px 10px; line-height: 1.6; border-radius: 6px;
-      box-shadow: 0 1px 6px rgba(0,0,0,.25); font-size: 12px;
+      position: fixed; bottom: 76px; left: 12px; z-index: 25;
+      background: rgba(255, 255, 255, 0.92); color: #1e293b;
+      padding: 8px 10px; border-radius: 8px; font-size: 12px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+      line-height: 1.5;
     }
-    #legend i { display: inline-block; width: 18px; height: 4px; margin-right: 6px; vertical-align: middle; }
-    #searchRow { display: flex; gap: 6px; width: 100%; }
-    #q { flex: 1; min-width: 0; font-size: 16px; padding: 10px; border: 1px solid #cbd5e1; border-radius: 8px; }
-    #results {
-      position: absolute; left: 0; right: 0; bottom: 100%; max-height: 40vh; overflow: auto;
-      background: #fff; box-shadow: 0 -2px 8px rgba(0,0,0,.25); display: none;
-    }
-    #results .item { padding: 11px 14px; border-bottom: 1px solid #e2e8f0; font-size: 15px; cursor: pointer; }
-    #results .item small { display: block; color: #64748b; font-size: 12px; margin-top: 2px; }
-    #results .empty { padding: 14px; color: #64748b; font-size: 14px; }
-    #windy { position: fixed; inset: 0; z-index: 1300; background: #0f172a; display: none; flex-direction: column; }
-    #windy .top { display: flex; gap: 8px; align-items: center; padding: calc(env(safe-area-inset-top, 0px) + 8px) 10px 8px; color: #fff; font-size: 14px; }
-    #windy .top span { flex: 1; font-weight: 700; }
-    #windy select, #windy button { font-size: 15px; padding: 8px 12px; border-radius: 8px; border: 1px solid #cbd5e1; background: #fff; }
-    #windy iframe { flex: 1; border: 0; width: 100%; }
+    .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
   </style>
 </head>
 <body>
-  <div id="banner">지도 불러오는 중...<small></small></div>
+  <div id="banner">지도 초기화 중...</div>
   <div id="map"></div>
+
   <div id="legend">
-    <b>도로 폭</b><br>
-    <i style="background:#e11d48"></i>위험 (2m 이하)<br>
-    <i style="background:#eab308"></i>경계 (3m 이하)<br>
-    <i style="background:#16a34a"></i>관심 (4m 이하)
-  </div>
-  <div id="bar">
-    <div id="results"></div>
-    <div id="searchRow">
-      <input id="q" type="search" placeholder="주소 또는 장소 검색 (예: 금산군청)" />
-      <button id="searchBtn">검색</button>
-    </div>
-    <button id="startBtn">▶ 안내 시작</button>
-    <button id="voiceBtn" class="on">🔊 음성</button>
-    <button id="followBtn" class="on">내 위치 따라가기</button>
-    <button id="satBtn">🛰 위성</button>
-    <button id="windBtn">🌦 기상</button>
+    <div><span class="dot" style="background:#e11d48;"></span>위험 (2m 이하)</div>
+    <div><span class="dot" style="background:#eab308;"></span>경계 (2m 초과 ~ 3m 이하)</div>
+    <div><span class="dot" style="background:#16a34a;"></span>관심 (3m 초과 ~ 4m 이하)</div>
   </div>
 
-  <div id="windy">
-    <div class="top">
-      <span>기상</span>
-      <select id="windOv">
-        <option value="wind">바람</option>
-        <option value="rain">비</option>
-        <option value="temp">기온</option>
-        <option value="clouds">구름</option>
-      </select>
-      <button id="windClose">닫기</button>
-    </div>
-    <iframe id="windFrame" title="기상"></iframe>
+  <div id="controls">
+    <button id="gpsBtn" class="btn on" onclick="toggleGPS()">GPS 추적 ON</button>
+    <button id="followBtn" class="btn on" onclick="toggleFollow()">화면 고정 ON</button>
+    <button id="voiceBtn" class="btn on" onclick="toggleVoice()">음성 안내 ON</button>
   </div>
 
-  <script src="app.js"></script>
+  <script src="./app.js"></script>
 </body>
 </html>
