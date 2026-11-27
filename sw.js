@@ -1,4 +1,4 @@
-const CACHE = 'geumsan-v8';
+const CACHE = 'geumsan-v9';
 const TILE_CACHE = 'geumsan-tiles-v1';   // 도로 타일을 바꿨을 때만 이 번호를 올리세요
 const PRECACHE = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './icon-maskable-512.png'];
 
@@ -20,7 +20,7 @@ self.addEventListener('fetch', e => {
   if (req.method !== 'GET' || url.origin !== location.origin) return;
 
   // 도로 타일: 저장해 둔 게 있으면 그걸 바로 쓰고, 없으면 받아서 저장
-  if (url.pathname.includes('/tiles/')) {
+  if (/\/(t_\d+_\d+|index)\.json$/.test(url.pathname)) {
     e.respondWith(
       caches.open(TILE_CACHE).then(cache =>
         cache.match(req).then(hit => hit || fetch(req).then(res => {

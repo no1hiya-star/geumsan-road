@@ -161,7 +161,7 @@
       });
       setBanner('', '지도 준비됨', '도로 데이터를 불러오는 중...');
       if (location.protocol.startsWith('http')) {
-        fetch('./tiles/index.json').then(r => r.ok ? r.json() : null).then(j => {
+        fetch('./index.json').then(r => r.ok ? r.json() : null).then(j => {
           if (!j) { setBanner('danger', '도로 데이터 목록을 못 받았어요', '인터넷 연결을 확인해 주세요'); return; }
           tileIndex = j;
           setBanner('', '지도 준비됨', '주변 도로 데이터를 불러오는 중...');
@@ -200,7 +200,7 @@
       if (!tileIndex || !tileIndex.tiles[key] || tileState.has(key)) return;
       tileState.set(key, 'loading');
       try {
-        const res = await fetch('./tiles/t_' + key + '.json');
+        const res = await fetch('./t_' + key + '.json');
         if (!res.ok) throw new Error('http ' + res.status);
         addTile(await res.json());
         tileState.set(key, 'done');
