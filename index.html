@@ -11,7 +11,11 @@
   <meta name="apple-mobile-web-app-title" content="차량길잡이" />
   <link rel="apple-touch-icon" href="apple-touch-icon.png" />
   <style>
-    html, body, #map { margin: 0; padding: 0; width: 100%; height: 100%; }
+    html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }
+    #map {
+      position: fixed; inset: 0; width: 100%; height: 100%;
+      transform-origin: 50% 50%; transition: transform .35s linear; will-change: transform;
+    }
     #banner {
       position: fixed; top: 0; left: 0; right: 0; z-index: 1100;
       padding: calc(env(safe-area-inset-top, 0px) + 10px) 14px 10px;
@@ -74,9 +78,9 @@
     <button id="startBtn">▶ 안내 시작</button>
     <button id="followBtn" class="on">내 위치 따라가기</button>
     <button id="satBtn">🛰 위성</button>
-    <button id="facBtn" class="on">🧯 소화전</button>
+    <button id="facBtn" class="on">🧯 용수시설</button>
     <button id="voiceBtn" class="on">🔊 음성 ON</button>
-    <button id="windBtn">🌬 바람·기상</button>
+    <button id="windBtn">🌬 기상</button>
   </div>
 
   <div id="windy">
@@ -134,6 +138,7 @@
     let followOn = true, watchId = null, lastPos = null, prevPos = null, curHeading = null;
     let gpsOverlay = null, gpsCircle = null, infoWin = null;
     let guiding = false, voiceOn = true, facOn = true, truckEl = null, truckAngle = 0, prevFix = null, lastSave = 0;
+    let mapRotation = 0;
     const facMarkers = [];
     let items = [];            // 지도에 그릴 도로선 (보이는 범위만 실제로 그림)
     let grid = new Map();
@@ -396,9 +401,19 @@
       wrap.appendChild(img);
       return wrap;
     }
+    function applyMapRotation(h) {
+      const mapEl = document.getElementById('map');
+      if (!mapEl || h === null || h === undefined || isNaN(h)) return;
+      mapRotation += ((h - mapRotation + 540) % 360) - 180;
+      mapEl.style.transform = 'scale(1.45) rotate(' + (-mapRotation) + 'deg)';
+      facMarkers.forEach(o => {
+        if (o.el) o.el.style.transform = 'rotate(' + mapRotation + 'deg)';
+      });
+    }
     function setTruckAngle(h) {   // 소방차 아이콘을 진행 방향으로 (가까운 쪽으로 돌림)
       if (!truckEl) return;
-      truckAngle += ((h - truckAngle + 540) % 360) - 180;
+      const target = h - mapRotation;
+      truckAngle += ((target - truckAngle + 540) % 360) - 180;
       truckEl.style.transform = 'rotate(' + truckAngle + 'deg)';
     }
 
@@ -440,7 +455,7 @@
           gpsOverlay.setPosition(ll);
           gpsCircle.setPosition(ll); gpsCircle.setRadius(accuracy);
         }
-        if (curHeading !== null) setTruckAngle(curHeading);
+        if (curHeading !== null) { applyMapRotation(curHeading); setTruckAngle(curHeading); }
         if (followOn) map.panTo(ll);
       }
       lastFix = { accuracy, speed: spd };
@@ -511,11 +526,11 @@
       }
     }
 
-    // ===== 소화전·비상소화장치 (hydrants_1.geojson, emergency_devices_1.geojson) =====
+    // ===== 용수시설: 소화전·비상소화장치 (hydrants_1.geojson, emergency_devices_1.geojson) =====
     const FAC_MAX_LEVEL = 5;   // 이 확대 수준 이하(가까이 볼 때)에서만 표시
     function infoBox(props, label) {
       const box = document.createElement('div');
-      box.style.cssText = 'padding:6px 8px;font-size:12px;line-height:1.5;min-width:150px;';
+      box.style.cssText = 'padding:10px 12px;font-size:13px;line-height:1.55;min-width:220px;max-width:290px;box-sizing:border-box;word-break:break-word;';
       const addLine = (text, bold) => {
         const d = document.createElement(bold ? 'b' : 'div'); d.textContent = text; box.appendChild(d);
         if (bold) box.appendChild(document.createElement('br'));
@@ -532,18 +547,32 @@
       if (props.remark) addLine('비고: ' + props.remark);
       return box;
     }
+    function makeFacEl(icon) {
+      const el = document.createElement('div');
+      el.style.cssText = 'width:30px;height:30px;transform-origin:50% 50%;transform:rotate(' + mapRotation + 'deg);cursor:pointer;';
+      const img = document.createElement('img');
+      img.src = icon; img.width = 30; img.height = 30; img.style.display = 'block';
+      el.appendChild(img);
+      return el;
+    }
     function loadFacilities() {
       if (!location.protocol.startsWith('http')) return;
       [['./hydrants_1.geojson', ICON_HYDRANT, '소화전'], ['./emergency_devices_1.geojson', ICON_DEVICE, '비상소화장치']].forEach(([url, icon, label]) => {
         fetch(url).then(r => r.ok ? r.json() : null).then(d => {
           if (!d) return;
-          const img = new kakao.maps.MarkerImage(icon, new kakao.maps.Size(30, 30), { offset: new kakao.maps.Point(15, 15) });
           (d.features || []).forEach(f => {
             if (!f.geometry || f.geometry.type !== 'Point') return;
             const [x, y] = f.geometry.coordinates;
-            const m = new kakao.maps.Marker({ position: new kakao.maps.LatLng(y, x), image: img, zIndex: 5 });
-            kakao.maps.event.addListener(m, 'click', () => { infoWin.setContent(infoBox(f.properties || {}, label)); infoWin.open(map, m); });
-            facMarkers.push({ m, shown: false });
+            const pos = new kakao.maps.LatLng(y, x);
+            const el = makeFacEl(icon);
+            const m = new kakao.maps.CustomOverlay({ position: pos, xAnchor: 0.5, yAnchor: 0.5, zIndex: 5, content: el });
+            el.addEventListener('click', ev => {
+              ev.stopPropagation();
+              infoWin.setContent(infoBox(f.properties || {}, label));
+              infoWin.setPosition(pos);
+              infoWin.open(map);
+            });
+            facMarkers.push({ m, el, shown: false });
           });
           updateFacilities();
         }).catch(() => {});
@@ -553,6 +582,7 @@
       if (!map) return;
       const show = facOn && map.getLevel() <= FAC_MAX_LEVEL;
       facMarkers.forEach(o => {
+        if (o.el) o.el.style.transform = 'rotate(' + mapRotation + 'deg)';
         if (show && !o.shown) { o.m.setMap(map); o.shown = true; }
         else if (!show && o.shown) { o.m.setMap(null); o.shown = false; }
       });
