@@ -94,13 +94,9 @@
     </div>
     <select id="vehicleSelect" aria-label="차종 선택">
       <option value="">차종 미선택</option>
-      <option value="carf">카프차 (1.75m)</option>
-      <option value="amb">구급차 (2.00m)</option>
-      <option value="small">소형펌프 (2.10m)</option>
-      <option value="mid">중형 (2.45m)</option>
-      <option value="large">대형급 (2.50m)</option>
     </select>
-    <button id="followBtn" class="on">내 위치 따라가기</button>
+    <button id="followBtn">내 위치 따라가기</button>
+    <button id="northBtn">🧭 북쪽 고정</button>
     <button id="satBtn">🛰 위성</button>
     <button id="facBtn" class="on">🧯 용수시설</button>
     <span id="soundSlot" data-reserved="sound-control"></span>
@@ -135,6 +131,11 @@
     const SAMPLE_M = 5;          // 도로선을 이 간격으로 살펴봄 (m)
     const CELL = 0.0006;         // 격자 크기 (도, 약 60m)
     const DRAW_MAX_LEVEL = 6;    // 카카오맵 레벨이 이 값 이하일 때만 도로선을 그림
+    const STOP_NORTH_MIN = 3;    // ★ 이 시간(분)을 넘게 멈춰 있으면 지도가 북쪽이 위로 돌아감 (현장 도착). 신호 대기는 이 안이라 지도가 안 움직임
+    const STOP_NORTH_MS = STOP_NORTH_MIN * 60 * 1000;
+    const STOP_RADIUS_M = 15;    // 멈춘 자리에서 이 거리(또는 GPS 오차) 안이면 계속 멈춘 것으로 봄 (GPS 흔들림 무시)
+    const HEADING_BASE_M = 10;   // 기기가 방향을 안 주면, 이 거리 이상 움직인 구간으로 진행 방향을 계산
+    const CORNER_TIGHT_M = 0.5;  // 급코너 통과 한계 축간거리와 차량 축간거리 차이가 이보다 작으면 "빠듯함"
 
     // 소방 아이콘
     const ICON_TRUCK = 'data:image/png;base64,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';
@@ -143,14 +144,29 @@
 
     let map = null;
 
-    // 차종별 제원 (순서: 차종 미선택 / 카프차 / 구급차 / 소형펌프 / 중형 / 대형급)
+    // 차종 6버튼 (엑셀 '앱 선택 구분' 시트 기준) - 전폭·축간거리 (mm, 전폭은 사이드미러 제외)
     const VEHICLES = {
-      carf:  { name: '카프차',   width: 1.75, length: 4.91, minRadius: 5.4 },
-      amb:   { name: '구급차',   width: 2.00, length: 5.25, minRadius: 5.8 },
-      small: { name: '소형펌프', width: 2.10, length: 6.68, minRadius: 6.8 },
-      mid:   { name: '중형',     width: 2.45, length: 7.80, minRadius: 8.2 },
-      large: { name: '대형급',   width: 2.50, length: 8.44, minRadius: 9.2 }
+      carf:   { name: '카프',      widthMm: 1815, wheelbaseMm: 2415 },
+      amb:    { name: '구급·지휘', widthMm: 2038, wheelbaseMm: 3670 },
+      small:  { name: '소형',      widthMm: 2200, wheelbaseMm: 3950 },
+      mid:    { name: '중형',      widthMm: 2500, wheelbaseMm: 4260 },
+      large:  { name: '대형',      widthMm: 2500, wheelbaseMm: 4925 },
+      ladder: { name: '고가·굴절', widthMm: 2500, wheelbaseMm: 5600 }
     };
+    for (const k in VEHICLES) {
+      VEHICLES[k].width = VEHICLES[k].widthMm / 1000;           // m
+      VEHICLES[k].wheelbase = VEHICLES[k].wheelbaseMm / 1000;   // m
+    }
+    const fmtMm = mm => (Math.round(mm / 10) / 100).toFixed(2); // 1815 -> "1.82"
+    (function buildVehicleOptions() {
+      const sel = document.getElementById('vehicleSelect');
+      for (const k in VEHICLES) {
+        const o = document.createElement('option');
+        o.value = k;
+        o.textContent = `${VEHICLES[k].name} (전폭 ${fmtMm(VEHICLES[k].widthMm)}m)`;
+        sel.appendChild(o);
+      }
+    })();
     let selectedVehicleKey = '';
 
     // 도로 폭 단계: 위험 2m 이하 / 경계 3m 이하 / 관심 4m 이하
@@ -165,10 +181,12 @@
       return 'caution';
     }
 
-    let followOn = true, watchId = null, lastPos = null, curHeading = null;
+    let trackMode = 'none', watchId = null, lastPos = null, curHeading = null;
     let gpsOverlay = null, gpsCircle = null, infoWin = null;
     let facOn = true, truckEl = null, prevFix = null, lastSave = 0;
     let mapRotation = 0;
+    let stopAnchor = null;      // 멈춤 판정 기준점 {lat, lng, t}
+    const trail = [];           // 최근 위치 (진행 방향 계산용)
     const facMarkers = [];
     let items = [];
     let grid = new Map();
@@ -207,9 +225,9 @@
       } else {
         const v = VEHICLES[selectedVehicleKey];
         if (v) {
-          setBanner('ok', `${v.name} 선택됨 · 차폭 ${v.width.toFixed(2)}m`, `최소 회전반경 참고 ${v.minRadius.toFixed(1)}m`, true);
+          setBanner('ok', `${v.name} 선택됨 · 전폭 ${fmtMm(v.widthMm)}m`, `축간거리 ${fmtMm(v.wheelbaseMm)}m (급코너 통과 판정에 사용)`, true);
         } else {
-          setBanner('', '차종 미선택 (도로 폭 기준 안내)', '차량을 선택하면 여유 폭과 회전반경 수치를 함께 표시합니다', true);
+          setBanner('', '차종 미선택 (도로 폭 기준 안내)', '차량을 선택하면 전폭 여유와 급코너 통과 여부를 함께 표시합니다', true);
         }
       }
     });
@@ -234,9 +252,7 @@
       map.addControl(new kakao.maps.ZoomControl(), kakao.maps.ControlPosition.RIGHT);
       infoWin = new kakao.maps.InfoWindow({ removable: true, zIndex: 20 });
       kakao.maps.event.addListener(map, 'idle', () => { updateVisible(); updateFacilities(); });
-      kakao.maps.event.addListener(map, 'dragstart', () => {
-        followOn = false; document.getElementById('followBtn').classList.remove('on');
-      });
+      kakao.maps.event.addListener(map, 'dragstart', () => setTrackMode('none'));
       setBanner('', '지도 준비됨', '위치와 도로 데이터를 불러오는 중...', true);
       if (location.protocol.startsWith('http')) {
         fetch('./index.json').then(r => r.ok ? r.json() : null).then(j => {
@@ -411,13 +427,11 @@
         return { kind: 'deadend', turnDeg: 180 };
       }
 
+      const exits = others.map(e => ({ turn: Math.round(angDiff(arriveBearing, e.outDir)), bt: e.bt }));
       let minTurn = 180;
-      for (const e of others) {
-        const turn = Math.round(angDiff(arriveBearing, e.outDir));
-        if (turn < minTurn) minTurn = turn;
-      }
+      for (const ex of exits) if (ex.turn < minTurn) minTurn = ex.turn;
       if (minTurn >= CORNER_MIN_DEG) {
-        return { kind: 'corner', turnDeg: minTurn };
+        return { kind: 'corner', turnDeg: minTurn, exits };
       }
       return null;
     }
@@ -456,10 +470,10 @@
       return wrap;
     }
 
-    function showHazardMarker(lat, lng, badgeText, infoHtml, isSevere) {
+    function showHazardMarker(lat, lng, badgeText, infoHtml, cls) {
       if (!map) return;
       const pos = new kakao.maps.LatLng(lat, lng);
-      const color = isSevere ? '#dc2626' : '#ca8a04';
+      const color = ({ danger: '#dc2626', warn: '#ca8a04', caution: '#16a34a' })[cls] || '#ca8a04';
       const el = makeHazardEl(badgeText, color);
       el.addEventListener('click', ev => {
         ev.stopPropagation();
@@ -485,7 +499,12 @@
       hazardEl = null;
     }
 
-    // ===== 위치 추적 + 네비게이션 헤드업 지도 회전 & 차량 진행방향 정면 고정 =====
+    // ===== 위치 추적 + 지도 회전 =====
+    // 모드 'none'   : 지도 고정 - 북쪽이 위, 내 위치를 따라다니지 않음 (앱을 열었을 때)
+    //      'follow' : 내 위치 따라가기 - 진행 방향이 위가 되게 지도 회전, 아이콘은 위를 봄
+    //      'north'  : 북쪽 고정 - 북쪽이 위, 내 위치는 계속 따라감
+    // 멈춤 규칙: STOP_NORTH_MIN분 이내로 멈추면 마지막 진행 방향 유지 (신호 대기),
+    //           넘게 멈추면 북쪽이 위로 복귀 (현장 도착), 다시 달려 진행 방향이 확인되면 따라가기 중일 때 진행 방향이 위로 복귀
     const SAVE_KEY = 'charyang_lastPos';
     function loadSavedPos() {
       try {
@@ -504,49 +523,94 @@
       const d = ((b - a + 540) % 360) - 180;
       return (a + d * w + 360) % 360;
     }
+    function shortestDelta(from, to) { return ((((to - from) % 360) + 540) % 360) - 180; }
+
     function makeTruck() {
       const wrap = document.createElement('div');
-      // ICON_TRUCK 원본 이미지 머리가 우측(동쪽, 0deg) 기준이므로 -90deg 적용 시 지도 좌표계 북쪽(0deg)을 향함
-      wrap.style.cssText = 'width:48px;height:48px;transform-origin:50% 50%;transform:rotate(90deg);filter:drop-shadow(0 1px 3px rgba(0,0,0,.5));';
+      wrap.style.cssText = 'width:48px;height:48px;transform-origin:50% 50%;filter:drop-shadow(0 1px 3px rgba(0,0,0,.5));';
       const img = document.createElement('img');
       img.src = ICON_TRUCK; img.width = 48; img.height = 48; img.style.display = 'block';
       wrap.appendChild(img);
       return wrap;
     }
+    // 아이콘 원본은 머리가 위(북쪽)를 보고 있음. 지도 안에서 진행 방향으로 돌리면,
+    // 지도가 진행 방향만큼 역회전된 따라가기 중에는 화면에서 자연히 위를 보게 됨.
+    function updateTruckIcon() {
+      if (truckEl) truckEl.style.transform = 'rotate(' + (curHeading === null ? 0 : curHeading) + 'deg)';
+    }
 
-    // 지도를 진행 방향(h)만큼 역회전(-mapRotation)시켜 진행 방향이 항상 화면 12시(위쪽)가 되게 함
-    function applyHeadingUpMap(h) {
+    function isStoppedLong() { return !!stopAnchor && (Date.now() - stopAnchor.t) >= STOP_NORTH_MS; }
+
+    function applyMapRotation(target, exact) {
       const mapEl = document.getElementById('map');
-      if (!mapEl || h === null || h === undefined || isNaN(h)) return;
-      mapRotation += ((h - mapRotation + 540) % 360) - 180;
+      if (!mapEl) return;
+      const d = shortestDelta(mapRotation, target);
+      if (Math.abs(d) < 1e-6) return;
+      if (!exact && Math.abs(d) < 1.5) return;      // 잔떨림 무시
+      mapRotation += d;
       mapEl.style.transform = 'rotate(' + (-mapRotation) + 'deg)';
-      facMarkers.forEach(o => {
-        if (o.el) o.el.style.transform = 'rotate(' + mapRotation + 'deg)';
-      });
+      facMarkers.forEach(o => { if (o.el) o.el.style.transform = 'rotate(' + mapRotation + 'deg)'; });
       if (hazardEl) hazardEl.style.transform = 'rotate(' + mapRotation + 'deg)';
-      if (truckEl) truckEl.style.transform = 'rotate(90deg)';
+    }
+    function syncMapRotation() {
+      const headingUp = trackMode === 'follow' && curHeading !== null && !isStoppedLong();
+      applyMapRotation(headingUp ? curHeading : 0, !headingUp);
+    }
+
+    function setTrackMode(mode) {
+      trackMode = mode;
+      document.getElementById('followBtn').classList.toggle('on', mode === 'follow');
+      document.getElementById('northBtn').classList.toggle('on', mode === 'north');
+      if (mode !== 'none' && map && lastPos) map.setCenter(new kakao.maps.LatLng(lastPos[0], lastPos[1]));
+      syncMapRotation();
+    }
+
+    // 멈춤 판정: 기준점에서 STOP_RADIUS_M(또는 GPS 오차)를 벗어나거나, 기기가 알려주는 속도가 MOVING_MS 이상이면 움직인 것
+    function updateStopState(lat, lng, acc, devSpeed) {
+      const t = Date.now();
+      if (!stopAnchor) { stopAnchor = { lat, lng, t }; return; }
+      const moved = dist(stopAnchor.lat, stopAnchor.lng, lat, lng) > Math.max(STOP_RADIUS_M, acc || 0);
+      const driving = devSpeed !== null && devSpeed >= MOVING_MS;
+      if (moved || driving) stopAnchor = { lat, lng, t };
+    }
+
+    // 기기가 방향을 안 줄 때: 최근 6초 안에서 기준 거리 이상 떨어진 가장 오래된 점 → 현재 위치 방향
+    // 기준 거리 = max(HEADING_BASE_M, GPS 오차 × 2) → 멈춰 있을 때 GPS가 흔들려도 지도가 돌지 않게 함
+    function derivedHeading(lat, lng, t, acc) {
+      trail.push({ lat, lng, t });
+      while (trail.length && t - trail[0].t > 6000) trail.shift();
+      const base = Math.max(HEADING_BASE_M, 2 * (acc || 0));
+      for (const p of trail) {
+        if (dist(p.lat, p.lng, lat, lng) >= base) return bearing(p.lat, p.lng, lat, lng);
+      }
+      return null;
     }
 
     function onPosition(pos) {
       const { latitude: lat, longitude: lng, accuracy } = pos.coords;
       const now = pos.timestamp || Date.now();
-      let spd = pos.coords.speed;
-      if (spd === null || spd === undefined || isNaN(spd)) {
+      const rawSpd = pos.coords.speed;
+      const devSpd = (rawSpd !== null && rawSpd !== undefined && !isNaN(rawSpd)) ? rawSpd : null;
+      let spd = devSpd;
+      if (spd === null) {
         spd = 0;
         if (prevFix) {
           const dt = (now - prevFix.t) / 1000;
           if (dt > 0.3 && dt < 10) spd = dist(prevFix.lat, prevFix.lng, lat, lng) / dt;
         }
       }
-      if (spd >= 1.5) {
-        let h = pos.coords.heading;
-        if ((h === null || h === undefined || isNaN(h)) && prevFix && dist(prevFix.lat, prevFix.lng, lat, lng) > 2) {
-          h = bearing(prevFix.lat, prevFix.lng, lat, lng);
+      const dh = derivedHeading(lat, lng, now, accuracy);
+      if (spd >= MOVING_MS) {
+        let h = pos.coords.heading, w = 0.85;
+        if (h === null || h === undefined || isNaN(h)) {          // 기기가 방향을 안 주면 직접 계산
+          h = dh;
+          if (h !== null && curHeading !== null && angDiff(curHeading, h) <= 25) w = 0.3;   // 작은 변화는 천천히 반영 (GPS 흔들림 완화)
         }
-        if (h !== null && h !== undefined && !isNaN(h)) curHeading = curHeading === null ? h : blendAngle(curHeading, h, 0.85);
+        if (h !== null && h !== undefined && !isNaN(h)) curHeading = curHeading === null ? h : blendAngle(curHeading, h, w);
       }
       prevFix = { lat, lng, t: now };
       lastPos = [lat, lng];
+      updateStopState(lat, lng, accuracy, devSpd);
 
       if (map) {
         const ll = new kakao.maps.LatLng(lat, lng);
@@ -558,18 +622,61 @@
             map, center: ll, radius: accuracy, strokeWeight: 1, strokeColor: '#2563eb',
             strokeOpacity: 0.8, fillColor: '#2563eb', fillOpacity: 0.1
           });
-          map.setCenter(ll); map.setLevel(3);
+          map.setCenter(ll); map.setLevel(3);     // 열었을 때 내 위치에서 시작
         } else {
           gpsOverlay.setPosition(ll);
           gpsCircle.setPosition(ll); gpsCircle.setRadius(accuracy);
         }
-        if (curHeading !== null) applyHeadingUpMap(curHeading);
-        if (followOn) map.panTo(ll);
+        updateTruckIcon();
+        syncMapRotation();
+        if (trackMode !== 'none') map.panTo(ll);
       }
       lastFix = { accuracy, speed: spd };
       savePos(lat, lng);
       ensureTilesForBox(lng - TILE_EDGE, lat - TILE_EDGE, lng + TILE_EDGE, lat + TILE_EDGE);
       checkAhead(lat, lng, accuracy, spd);
+    }
+    // 위치 갱신이 없어도(멈춘 상태) 3분이 지나면 지도를 북쪽 위로 되돌리기 위한 점검
+    setInterval(syncMapRotation, 5000);
+
+    // ===== 급코너 통과 판정 (축간거리 기반) =====
+    // 앞·뒤 차축 중심을 잇는 선(길이 = 축간거리)이 꺾인 길의 안쪽 모서리를 돌아 나갈 수 있는지 계산합니다.
+    // 이 선이 움직일 수 있는 폭 = 도로폭 − 전폭 (좌우로 전폭의 절반씩 비워야 하므로).
+    // 들어오는 길 a, 나가는 길 b, 꺾임각 θ 일 때 통과할 수 있는 최대 축간거리:
+    //   min over φ∈(0,θ) [ a / sin φ + b / sin(θ − φ) ]   (θ=90°이면 (a^(2/3) + b^(2/3))^(3/2))
+    function maxWheelbaseForCorner(thetaDeg, a, b) {
+      if (!(a > 0) || !(b > 0)) return 0;
+      const th = toRad(Math.min(180, Math.max(1, thetaDeg)));
+      const f = p => a / Math.sin(p) + b / Math.sin(th - p);
+      let lo = 1e-4, hi = th - 1e-4;
+      for (let i = 0; i < 60; i++) {
+        const m1 = lo + (hi - lo) / 3, m2 = hi - (hi - lo) / 3;
+        if (f(m1) < f(m2)) hi = m2; else lo = m1;
+      }
+      return f((lo + hi) / 2);
+    }
+
+    const RANK = { danger: 0, warn: 1, caution: 2, ok: 3 };
+
+    // info: analyzeNodeAhead 결과, bIn: 들어오는 도로폭
+    function evalCorner(v, info, bIn) {
+      if (info.kind === 'deadend') return { cls: 'danger', verdict: '회차 공간 확인', limit: null, deg: 180, dead: true };
+      if (isNaN(bIn)) return { cls: 'warn', verdict: '도로폭 정보 없음', limit: null, deg: info.turnDeg };
+      const a = bIn - v.width;
+      let best = null;
+      for (const ex of info.exits) {
+        const bOut = isNaN(ex.bt) ? bIn : ex.bt;               // 나가는 길 폭을 모르면 들어오는 길과 같다고 봄
+        const lim = maxWheelbaseForCorner(ex.turn, a, bOut - v.width);
+        if (!best || lim > best.limit) best = { limit: lim, deg: ex.turn, bOut };   // 가장 통과하기 쉬운 갈래 기준
+      }
+      const margin = best.limit - v.wheelbase;
+      const tooNarrow = a <= 0 || best.bOut - v.width <= 0;
+      let cls, verdict;
+      if (tooNarrow) { cls = 'danger'; verdict = '도로폭이 전폭보다 좁음'; }
+      else if (margin < 0) { cls = 'danger'; verdict = '통과 어려움'; }
+      else if (margin < CORNER_TIGHT_M) { cls = 'warn'; verdict = '통과 빠듯함'; }
+      else { cls = 'caution'; verdict = '통과 가능'; }
+      return { cls, verdict, limit: best.limit, deg: best.deg };
     }
 
     // ===== 전방 판정 =====
@@ -627,19 +734,10 @@
             if (alongEnd >= AHEAD_MIN && alongEnd <= AHEAD_DIST && lateralEnd <= CORRIDOR_M) {
               const info = analyzeNodeAhead(endX, endY, arriveDir);
               if (info) {
-                const isDeadEnd = info.kind === 'deadend';
-                const needRadius = isDeadEnd
-                  ? v.minRadius
-                  : +(v.minRadius * (info.turnDeg / 90)).toFixed(1);
-                const spotType = isDeadEnd ? '막다른 길 끝점' : `급코너 ${info.turnDeg}°`;
-                const severe = isDeadEnd || (!isNaN(sg.bt) && sg.bt < v.width);
-                if (!bestSpot || alongEnd < bestSpot.dist) {
-                  bestSpot = {
-                    lat: endY, lng: endX, dist: alongEnd,
-                    type: spotType, bt: sg.bt, rn: sg.rn,
-                    needRadius, severe
-                  };
-                }
+                const spot = Object.assign({ lat: endY, lng: endX, dist: alongEnd, bt: sg.bt, rn: sg.rn }, evalCorner(v, info, sg.bt));
+                // 더 위험한 지점 우선, 같은 등급이면 가까운 지점
+                if (!bestSpot || RANK[spot.cls] < RANK[bestSpot.cls] ||
+                    (spot.cls === bestSpot.cls && spot.dist < bestSpot.dist)) bestSpot = spot;
               }
             }
           }
@@ -647,15 +745,18 @@
       }
 
       if (v && bestSpot) {
-        const badge = `${Math.round(bestSpot.dist)}m · ${bestSpot.type}`;
-        const btTxt = isNaN(bestSpot.bt) ? '정보 없음' : `${bestSpot.bt.toFixed(1)}m`;
+        const s = bestSpot;
+        const typeTxt = s.dead ? '막다른 길 끝점' : `급코너 ${s.deg}°`;
+        const badge = `${Math.round(s.dist)}m · ${typeTxt}`;
+        const btTxt = isNaN(s.bt) ? '정보 없음' : `${s.bt.toFixed(1)}m`;
         const infoHtml =
           `<div style="padding:8px 10px;font-size:12px;line-height:1.5;">` +
-          `<b>${bestSpot.type}</b> (${bestSpot.rn})<br>` +
-          `도로폭: <b>${btTxt}</b> · ${v.name} 폭: <b>${v.width.toFixed(2)}m</b><br>` +
-          `필요 회전반경 참고: <b>${bestSpot.needRadius.toFixed(1)}m</b>` +
+          `<b>${typeTxt}</b> (${s.rn})<br>` +
+          `도로폭: <b>${btTxt}</b><br>` +
+          `${v.name} 전폭 <b>${fmtMm(v.widthMm)}m</b> · 축간거리 <b>${fmtMm(v.wheelbaseMm)}m</b><br>` +
+          `판정: <b>${s.verdict}</b>${s.limit > 0 ? ` · 통과 한계 축간거리 ${s.limit.toFixed(2)}m` : ''}` +
           `</div>`;
-        showHazardMarker(bestSpot.lat, bestSpot.lng, badge, infoHtml, bestSpot.severe);
+        showHazardMarker(s.lat, s.lng, badge, infoHtml, s.cls);
       } else {
         clearHazardMarker();
       }
@@ -664,37 +765,50 @@
       const onRoad = nearest && nd <= ON_ROAD_DIST;
 
       if (v) {
+        const wTxt = fmtMm(v.widthMm), lTxt = fmtMm(v.wheelbaseMm);
+
+        let spotAlert = null;
         if (bestSpot) {
-          const cls = bestSpot.severe ? 'danger' : 'warn';
-          const btStr = isNaN(bestSpot.bt) ? '폭 미상' : `도로폭 ${bestSpot.bt.toFixed(1)}m`;
-          setBanner(
-            cls,
-            `전방 ${Math.round(bestSpot.dist)}m · ${bestSpot.type} (회전반경 ${bestSpot.needRadius.toFixed(1)}m)`,
-            `${v.name} ${v.width.toFixed(2)}m · ${btStr} · ${bestSpot.rn}${accNote}`
-          );
-          onAlertTrigger(cls, bestSpot.type, 'spot_' + bestSpot.rn);
-          return;
+          const s = bestSpot;
+          const typeTxt = s.dead ? '막다른 길 끝점' : `급코너 ${s.deg}°`;
+          const btStr = isNaN(s.bt) ? '폭 미상' : `도로폭 ${s.bt.toFixed(1)}m`;
+          const limTxt = s.limit > 0 ? ` / 통과 한계 ${s.limit.toFixed(2)}m` : '';
+          spotAlert = {
+            cls: s.cls,
+            title: `전방 ${Math.round(s.dist)}m · ${typeTxt} · ${s.verdict}`,
+            sub: `${v.name} 전폭 ${wTxt}m · 축간거리 ${lTxt}m${limTxt} · ${btStr} · ${s.rn}${accNote}`,
+            key: 'spot_' + s.rn
+          };
         }
 
+        let segAlert = null;
         const targetSeg = (onRoad && !fast) ? nearest : ahead;
         if (targetSeg && !isNaN(targetSeg.bt)) {
           const margin = +(targetSeg.bt - v.width).toFixed(2);
           const marginTxt = margin >= 0 ? `여유 +${margin.toFixed(2)}m` : `차이 ${margin.toFixed(2)}m`;
           const prefix = (onRoad && !fast) ? '현재' : `전방 ${Math.round(ad)}m`;
           const cls = margin < 0 ? 'danger' : (margin < 0.5 ? 'warn' : 'caution');
-          setBanner(
+          segAlert = {
             cls,
-            `${prefix} 도로폭 ${targetSeg.bt.toFixed(1)}m · ${marginTxt}`,
-            `${v.name} 폭 ${v.width.toFixed(2)}m · ${targetSeg.rn}${accNote}`
-          );
-          onAlertTrigger(cls, marginTxt, 'seg_' + targetSeg.rn);
+            title: `${prefix} 도로폭 ${targetSeg.bt.toFixed(1)}m · ${marginTxt}`,
+            sub: `${v.name} 전폭 ${wTxt}m · ${targetSeg.rn}${accNote}`,
+            key: 'seg_' + targetSeg.rn
+          };
+        }
+
+        // 급코너와 직선 도로 경고 중 더 위험한 쪽을 표시 (같으면 급코너)
+        let show = spotAlert;
+        if (segAlert && (!spotAlert || RANK[segAlert.cls] < RANK[spotAlert.cls])) show = segAlert;
+        if (show) {
+          setBanner(show.cls, show.title, show.sub);
+          onAlertTrigger(show.cls, show.title, show.key);
           return;
         }
 
         setBanner(
           'ok',
-          `${v.name} (${v.width.toFixed(2)}m) · 전방 ${AHEAD_DIST}m 내 특이구간 없음`,
-          `최소 회전반경 참고 ${v.minRadius.toFixed(1)}m${accNote}`
+          `${v.name} · 전방 ${AHEAD_DIST}m 내 특이구간 없음`,
+          `전폭 ${wTxt}m · 축간거리 ${lTxt}m${accNote}`
         );
         return;
       }
@@ -840,7 +954,7 @@
       const ll = new kakao.maps.LatLng(it.y, it.x);
       if (!destMarker) destMarker = new kakao.maps.Marker({ position: ll, map });
       else { destMarker.setPosition(ll); destMarker.setMap(map); }
-      followOn = false; document.getElementById('followBtn').classList.remove('on');
+      setTrackMode('none');
       map.setCenter(ll); map.setLevel(3);
       const box = document.createElement('div');
       box.style.cssText = 'padding:6px 8px;font-size:12px;';
@@ -884,11 +998,8 @@
     document.getElementById('facBtn').onclick = e => {
       facOn = !facOn; e.target.classList.toggle('on', facOn); updateFacilities();
     };
-    document.getElementById('followBtn').onclick = e => {
-      followOn = !followOn;
-      e.target.classList.toggle('on', followOn);
-      if (followOn && lastPos && map) map.setCenter(new kakao.maps.LatLng(lastPos[0], lastPos[1]));
-    };
+    document.getElementById('followBtn').onclick = () => setTrackMode(trackMode === 'follow' ? 'none' : 'follow');
+    document.getElementById('northBtn').onclick = () => setTrackMode(trackMode === 'north' ? 'none' : 'north');
 
     // ===== Windy 기상 지도 =====
     function windyUrl(lat, lng, ov) {
