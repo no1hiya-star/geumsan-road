@@ -507,7 +507,7 @@
     function makeTruck() {
       const wrap = document.createElement('div');
       // ICON_TRUCK 원본 이미지 머리가 우측(동쪽, 0deg) 기준이므로 -90deg 적용 시 지도 좌표계 북쪽(0deg)을 향함
-      wrap.style.cssText = 'width:48px;height:48px;transform-origin:50% 50%;transform:rotate(-90deg);filter:drop-shadow(0 1px 3px rgba(0,0,0,.5));';
+      wrap.style.cssText = 'width:48px;height:48px;transform-origin:50% 50%;transform:rotate(90deg);filter:drop-shadow(0 1px 3px rgba(0,0,0,.5));';
       const img = document.createElement('img');
       img.src = ICON_TRUCK; img.width = 48; img.height = 48; img.style.display = 'block';
       wrap.appendChild(img);
@@ -524,7 +524,7 @@
         if (o.el) o.el.style.transform = 'rotate(' + mapRotation + 'deg)';
       });
       if (hazardEl) hazardEl.style.transform = 'rotate(' + mapRotation + 'deg)';
-      if (truckEl) truckEl.style.transform = 'rotate(' + ((h - mapRotation) - 90) + 'deg)';
+      if (truckEl) truckEl.style.transform = 'rotate(90deg)';
     }
 
     function onPosition(pos) {
