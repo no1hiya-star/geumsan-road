@@ -1,4 +1,4 @@
-const CACHE = 'geumsan-v9';
+const CACHE = 'geumsan-v10';
 const TILE_CACHE = 'geumsan-tiles-v1';   // 도로 타일을 바꿨을 때만 이 번호를 올리세요
 const PRECACHE = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './icon-maskable-512.png'];
 
