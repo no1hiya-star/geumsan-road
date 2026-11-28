@@ -12,9 +12,14 @@
   <link rel="apple-touch-icon" href="apple-touch-icon.png" />
   <style>
     html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }
+    #mapWrap {
+      position: fixed; inset: 0; width: 100%; height: 100%; overflow: hidden;
+    }
     #map {
-      position: fixed; inset: 0; width: 100%; height: 100%;
-      transform-origin: 50% 50%; transition: transform .12s linear; will-change: transform;
+      position: absolute; left: 50%; top: 50%;
+      width: 150vmax; height: 150vmax;
+      margin-left: -75vmax; margin-top: -75vmax;
+      transform-origin: 50% 50%; transition: transform .15s linear; will-change: transform;
     }
     #banner {
       position: fixed; top: 0; left: 0; right: 0; z-index: 1100;
@@ -74,7 +79,7 @@
 </head>
 <body>
   <div id="banner">지도 불러오는 중...<small></small></div>
-  <div id="map"></div>
+  <div id="mapWrap"><div id="map"></div></div>
   <div id="legend">
     <b>도로 폭</b><br>
     <i style="background:#e11d48"></i>위험 (2m 이하)<br>
@@ -139,7 +144,6 @@
     let map = null;
 
     // 차종별 제원 (순서: 차종 미선택 / 카프차 / 구급차 / 소형펌프 / 중형 / 대형급)
-    // minRadius: 최소 회전반경 참고 수치(m)
     const VEHICLES = {
       carf:  { name: '카프차',   width: 1.75, length: 4.91, minRadius: 5.4 },
       amb:   { name: '구급차',   width: 2.00, length: 5.25, minRadius: 5.8 },
@@ -163,7 +167,7 @@
 
     let followOn = true, watchId = null, lastPos = null, curHeading = null;
     let gpsOverlay = null, gpsCircle = null, infoWin = null;
-    let facOn = true, truckEl = null, truckAngle = 0, prevFix = null, lastSave = 0;
+    let facOn = true, truckEl = null, prevFix = null, lastSave = 0;
     let mapRotation = 0;
     const facMarkers = [];
     let items = [];
@@ -188,11 +192,9 @@
       banner.innerHTML = title + (sub ? `<small>${sub}</small>` : '');
     }
 
-    // 추후 음성·진동 알림을 연결할 예약 함수 (현재는 무음 동작)
     const soundEnabled = false;
     function onAlertTrigger(level, text, key) {
       if (!soundEnabled) return;
-      // 추후 음성 안내/효과음 연결 지점
     }
 
     // ===== 차종 선택 이벤트 =====
@@ -228,6 +230,7 @@
       map = new kakao.maps.Map(document.getElementById('map'), {
         center: new kakao.maps.LatLng(startPos.lat, startPos.lng), level: 4
       });
+      setTimeout(() => { if (map) map.relayout(); }, 150);
       map.addControl(new kakao.maps.ZoomControl(), kakao.maps.ControlPosition.RIGHT);
       infoWin = new kakao.maps.InfoWindow({ removable: true, zIndex: 20 });
       kakao.maps.event.addListener(map, 'idle', () => { updateVisible(); updateFacilities(); });
@@ -393,7 +396,7 @@
       }
     }
 
-    function analyzeNodeAhead(nodeLng, nodeLat, arriveBearing, featId) {
+    function analyzeNodeAhead(nodeLng, nodeLat, arriveBearing) {
       const key = ptKey(nodeLng, nodeLat);
       const edges = nodeMap.get(key) || [];
       const revDir = (arriveBearing + 180) % 360;
@@ -482,7 +485,7 @@
       hazardEl = null;
     }
 
-    // ===== 위치 추적 (앱 시작 즉시 자동 실행) =====
+    // ===== 위치 추적 + 네비게이션 헤드업 지도 회전 & 차량 진행방향 정면 고정 =====
     const SAVE_KEY = 'charyang_lastPos';
     function loadSavedPos() {
       try {
@@ -503,27 +506,25 @@
     }
     function makeTruck() {
       const wrap = document.createElement('div');
-      wrap.style.cssText = 'width:48px;height:48px;transform-origin:50% 50%;transition:transform .12s linear;filter:drop-shadow(0 1px 3px rgba(0,0,0,.5));';
+      // ICON_TRUCK 원본 이미지 머리가 우측(동쪽, 0deg) 기준이므로 -90deg 적용 시 지도 좌표계 북쪽(0deg)을 향함
+      wrap.style.cssText = 'width:48px;height:48px;transform-origin:50% 50%;transform:rotate(-90deg);filter:drop-shadow(0 1px 3px rgba(0,0,0,.5));';
       const img = document.createElement('img');
       img.src = ICON_TRUCK; img.width = 48; img.height = 48; img.style.display = 'block';
       wrap.appendChild(img);
       return wrap;
     }
-    function applyMapRotation(h) {
+
+    // 지도를 진행 방향(h)만큼 역회전(-mapRotation)시켜 진행 방향이 항상 화면 12시(위쪽)가 되게 함
+    function applyHeadingUpMap(h) {
       const mapEl = document.getElementById('map');
       if (!mapEl || h === null || h === undefined || isNaN(h)) return;
       mapRotation += ((h - mapRotation + 540) % 360) - 180;
-      mapEl.style.transform = 'scale(1.45) rotate(' + (-mapRotation) + 'deg)';
+      mapEl.style.transform = 'rotate(' + (-mapRotation) + 'deg)';
       facMarkers.forEach(o => {
         if (o.el) o.el.style.transform = 'rotate(' + mapRotation + 'deg)';
       });
       if (hazardEl) hazardEl.style.transform = 'rotate(' + mapRotation + 'deg)';
-    }
-    function setTruckAngle(h) {
-      if (!truckEl) return;
-      const target = (h - mapRotation) - 90;
-      truckAngle += ((target - truckAngle + 540) % 360) - 180;
-      truckEl.style.transform = 'rotate(' + truckAngle + 'deg)';
+      if (truckEl) truckEl.style.transform = 'rotate(' + ((h - mapRotation) - 90) + 'deg)';
     }
 
     function onPosition(pos) {
@@ -537,9 +538,9 @@
           if (dt > 0.3 && dt < 10) spd = dist(prevFix.lat, prevFix.lng, lat, lng) / dt;
         }
       }
-      if (spd >= 2) {
+      if (spd >= 1.5) {
         let h = pos.coords.heading;
-        if ((h === null || h === undefined || isNaN(h)) && prevFix && dist(prevFix.lat, prevFix.lng, lat, lng) > 4) {
+        if ((h === null || h === undefined || isNaN(h)) && prevFix && dist(prevFix.lat, prevFix.lng, lat, lng) > 2) {
           h = bearing(prevFix.lat, prevFix.lng, lat, lng);
         }
         if (h !== null && h !== undefined && !isNaN(h)) curHeading = curHeading === null ? h : blendAngle(curHeading, h, 0.85);
@@ -562,7 +563,7 @@
           gpsOverlay.setPosition(ll);
           gpsCircle.setPosition(ll); gpsCircle.setRadius(accuracy);
         }
-        if (curHeading !== null) { applyMapRotation(curHeading); setTruckAngle(curHeading); }
+        if (curHeading !== null) applyHeadingUpMap(curHeading);
         if (followOn) map.panTo(ll);
       }
       lastFix = { accuracy, speed: spd };
@@ -624,7 +625,7 @@
             const lateralEnd = Math.abs(ex * rx + ey * ry);
 
             if (alongEnd >= AHEAD_MIN && alongEnd <= AHEAD_DIST && lateralEnd <= CORRIDOR_M) {
-              const info = analyzeNodeAhead(endX, endY, arriveDir, sg.featId);
+              const info = analyzeNodeAhead(endX, endY, arriveDir);
               if (info) {
                 const isDeadEnd = info.kind === 'deadend';
                 const needRadius = isDeadEnd
